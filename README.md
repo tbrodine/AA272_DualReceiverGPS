@@ -7,4 +7,4 @@ Final Project MATLAB code repository for AA 272 at Stanford
 -Final_Project_Solver_2phones.m solves for the position solution using 2 phones' gnss data using nonlinear minimization problem. \
 -The data directory contains CVS outputted by driver.m with the quantities of interest to be used in the solver. \
 \
-The GPS Tools library used to pre-process the raw GNSS measurements can be found at: https://github.com/google/gps-measurement-tools. It is not inlcuded in this repository. 
+The GPS Tools library used to pre-process the raw GNSS measurements can be found at: https://github.com/google/gps-measurement-tools. It is not inlcuded in this repository. Some scripts were edited to output desired QOIs.

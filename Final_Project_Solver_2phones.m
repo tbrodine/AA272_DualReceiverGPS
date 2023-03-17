@@ -5,7 +5,7 @@ clc, clear, close all
 % Read in the log data, preprocessed by ProcessGnssMeasScript
 % Uncomment one of the blocks below, depending on what data to analyze
 
-% % % TEST 1
+% % TEST 1
 % log0 = readtable('phone0_1m_l1.csv');
 % log1_raw = readtable('phone1_1m_l1.csv');
 % global set_distance
@@ -42,15 +42,15 @@ clc, clear, close all
 % titl = 'Test 4 - ';
 
 % % % TEST 5
-% log0 = readtable('right_35_4ft.csv');
-% log1_raw = readtable('left_35_4ft.csv');
-% global set_distance
-% set_distance = 4*0.3048; % m
-% moving = 1;
-% truth = 35*0.44704; % m/s
-% titl = 'Test 5 - ';
+log0 = readtable('right_35_4ft.csv');
+log1_raw = readtable('left_35_4ft.csv');
+global set_distance
+set_distance = 4*0.3048; % m
+moving = 1;
+truth = 35*0.44704; % m/s
+titl = 'Test 5 - ';
 
-% % % TEST 6
+% % TEST 6
 % log1_raw = readtable('right_35_4ft.csv');
 % log0 = readtable('left_35_4ft.csv');
 % global set_distance
@@ -126,6 +126,8 @@ end
 % initialize solution vectors
 pos0_alone = zeros(4,length(start_ids0));
 % pos_nl0 = zeros(4,length(start_ids0));
+
+tic
 for i = 1:length(start_ids0)
     if i~=length(start_ids0)
         ids = start_ids0(i):start_ids0(i+1)-1;
@@ -141,6 +143,8 @@ for i = 1:length(start_ids0)
     pos0_alone(:,i) = solve_pos_WLS(x0,log0.X(ids),log0.Y(ids),log0.Z(ids),...
         log0.B(ids),log0.rho(ids),log0.sigma_rho(ids)); % rho is called Pseudo_m in gnss_log
 end
+toc
+
     pos0_alone_mean = [mean(pos0_alone(1,:));mean(pos0_alone(2,:));mean(pos0_alone(3,:))];
 lla_pos0_alone = ecef2lla(pos0_alone(1:3,:)')';
 lla_pos0_alone_mean = [mean(lla_pos0_alone(1,:));mean(lla_pos0_alone(2,:));mean(lla_pos0_alone(3,:))];
@@ -183,6 +187,7 @@ time_steps = min([length(start_ids0),length(start_ids1)]);
 % initialize solution vectors
 pos0_NL = zeros(4,time_steps);
 pos1_NL = zeros(4,time_steps);
+tic
 for i = 1:time_steps
     if i~=length(start_ids0)
         ids0 = start_ids0(i):start_ids0(i+1)-1;
@@ -198,11 +203,17 @@ for i = 1:time_steps
     x0 = [pos0_alone(:,i),pos1_alone(:,i)];
     
     % Solve using nonlinear cost function:
-    fun = @(x) cost(x,...
+%     fun = @(x) cost(x,...
+%         log0.X(ids0),log0.Y(ids0),log0.Z(ids0),...
+%         log0.B(ids0),log0.rho(ids0),...
+%         log1.X(ids1),log1.Y(ids1),log1.Z(ids1),...
+%         log1.B(ids1),log1.rho(ids1));
+    fun = @(x) cost2(x,...
         log0.X(ids0),log0.Y(ids0),log0.Z(ids0),...
         log0.B(ids0),log0.rho(ids0),...
         log1.X(ids1),log1.Y(ids1),log1.Z(ids1),...
-        log1.B(ids1),log1.rho(ids1));
+        log1.B(ids1),log1.rho(ids1),...
+        log0.sigma_rho(ids0),log1.sigma_rho(ids1));
     options = optimoptions(@fmincon,'display','none',...
         'MaxFunctionEvaluations',10000,...
         'MaxIterations',5000,...
@@ -216,6 +227,8 @@ for i = 1:time_steps
     pos0_NL(:,i) = x_opt(:,1);
     pos1_NL(:,i) = x_opt(:,2);
 end
+toc
+
 pos0_NL_mean = [mean(pos0_NL(1,:));mean(pos0_NL(2,:));mean(pos0_NL(3,:))];
 lla_pos0_NL = ecef2lla(pos0_NL(1:3,:)')';
 lla_pos0_NL_mean = [mean(lla_pos0_NL(1,:));mean(lla_pos0_NL(2,:));mean(lla_pos0_NL(3,:))];
@@ -269,9 +282,9 @@ if moving==0
     fprintf('Phone 0 using Phone 1 XYZ distance from truth:\n')
     fprintf('Error = %0.3f m\n\n',norm(truth-pos0_NL_mean))
     fprintf('Phone 0 Alone Lat/Long distance from truth:\n')
-    fprintf('Error = %0.3e deg\n\n',norm(lla_truth(1:2)-lla_pos0_alone_mean(1:2)))
+    fprintf('Error = %0.3f m\n\n',compute_lla_dist(lla_truth,lla_pos0_alone_mean))
     fprintf('Phone 0 using Phone 1 Lat/Long distance from truth:\n')
-    fprintf('Error = %0.3e deg\n\n',norm(lla_truth(1:2)-lla_pos0_NL_mean(1:2)))
+    fprintf('Error = %0.3f m\n\n',compute_lla_dist(lla_truth,lla_pos0_NL_mean))
     
 else
     vel0_alone = compute_vel_XYZ(pos0_alone);
@@ -297,6 +310,19 @@ xa = x(:,1);
 xb = x(:,2);
 ra = norm(rho_a-get_expected_pseudoranges(xa,Xa,Ya,Za,Ba));
 rb = norm(rho_b-get_expected_pseudoranges(xb,Xb,Yb,Zb,Bb));
+c = ra+rb;%sqrt(sum(ra.^2+rb.^2));
+% ra = rho_a-get_expected_pseudoranges(xa,Xa,Ya,Za,Ba);
+% rb = rho_b-get_expected_pseudoranges(xb,Xb,Yb,Zb,Bb);
+% c = sqrt(sum(ra.^2)+sum(rb.^2));
+end
+
+function [c] = cost2(x,Xa,Ya,Za,Ba,rho_a,Xb,Yb,Zb,Bb,rho_b,sr_a,sr_b)
+xa = x(:,1);
+xb = x(:,2);
+res_a = rho_a-get_expected_pseudoranges(xa,Xa,Ya,Za,Ba);
+res_b = rho_b-get_expected_pseudoranges(xb,Xb,Yb,Zb,Bb);
+ra = sqrt(res_a'*diag(1./sr_a)*res_a);
+rb = sqrt(res_b'*diag(1./sr_b)*res_b);
 c = ra+rb;%sqrt(sum(ra.^2+rb.^2));
 % ra = rho_a-get_expected_pseudoranges(xa,Xa,Ya,Za,Ba);
 % rb = rho_b-get_expected_pseudoranges(xb,Xb,Yb,Zb,Bb);
@@ -361,6 +387,16 @@ function [vel] = compute_vel_LLA(pos)
         dist_long = (2*pi*r_E*cosd(pos(1,i)))*delta_long/2/pi; % m
         vel(i) = sqrt(dist_lat^2+dist_long^2);
     end
+end
+
+function [dist] = compute_lla_dist(lla1,lla2)
+r_E = 6371.000e3; % m
+    c_E = 2*pi*r_E; % m
+    delta_lat = abs(lla1(1)-lla2(1))*pi/180;
+        delta_long = abs(lla1(2)-lla2(2))*pi/180;
+    dist_lat = c_E*delta_lat/2/pi; % m
+        dist_long = (2*pi*r_E*cosd(lla1(1)))*delta_long/2/pi; % m
+        dist = sqrt(dist_lat^2+dist_long^2);    
 end
 
 % Newton-Raphson method
